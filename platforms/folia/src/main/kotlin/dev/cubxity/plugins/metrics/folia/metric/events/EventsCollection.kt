@@ -20,7 +20,6 @@ package dev.cubxity.plugins.metrics.folia.metric.events
 import dev.cubxity.plugins.metrics.api.metric.collector.Collector
 import dev.cubxity.plugins.metrics.api.metric.collector.CollectorCollection
 import dev.cubxity.plugins.metrics.api.metric.collector.Counter
-import dev.cubxity.plugins.metrics.api.metric.store.VolatileDoubleStore
 import dev.cubxity.plugins.metrics.common.metric.Metrics
 import dev.cubxity.plugins.metrics.folia.bootstrap.UnifiedMetricsFoliaBootstrap
 import io.papermc.paper.event.player.AsyncChatEvent
@@ -35,8 +34,8 @@ import org.bukkit.event.server.ServerListPingEvent
 @Suppress("UNUSED_PARAMETER")
 class EventsCollection(private val bootstrap: UnifiedMetricsFoliaBootstrap) : CollectorCollection, Listener {
     private val loginCounter = Counter(Metrics.Events.Login)
-    private val joinCounter = Counter(Metrics.Events.Join, valueStoreFactory = VolatileDoubleStore)
-    private val quitCounter = Counter(Metrics.Events.Quit, valueStoreFactory = VolatileDoubleStore)
+    private val joinCounter = Counter(Metrics.Events.Join)
+    private val quitCounter = Counter(Metrics.Events.Quit)
     private val chatCounter = Counter(Metrics.Events.Chat)
     private val pingCounter = Counter(Metrics.Events.Ping)
 

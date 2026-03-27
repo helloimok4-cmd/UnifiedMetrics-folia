@@ -29,7 +29,11 @@ class UnifiedMetricsCollector(private val api: UnifiedMetrics) : Collector() {
                 api.metricsManager.collect()
             }
 
-            metrics.toPrometheus()
+            val extraLabels = mapOf(
+                "server" to api.serverName,
+                "platform" to api.platform.type.name
+            )
+            metrics.toPrometheus(extraLabels)
         } catch (exception: Exception) {
             api.logger.severe("An error occurred whilst collecting metrics", exception)
             emptyList()

@@ -93,6 +93,7 @@ class InfluxMetricsDriver(private val api: UnifiedMetrics, private val config: I
             val point = Point(metric.name)
             point.addTags(metric.labels)
             point.addTag("server", api.serverName)
+            point.addTag("platform", api.platform.type.name)
 
             when (metric) {
                 is GaugeMetric -> point.addField("gauge", metric.value)

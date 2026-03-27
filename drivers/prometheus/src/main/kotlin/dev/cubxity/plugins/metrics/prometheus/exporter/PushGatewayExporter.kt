@@ -64,7 +64,11 @@ class PushGatewayExporter(
                 val time = measureTimeMillis {
                     try {
                         val samples = api.metricsManager.collect()
-                        val collection = MetricSamplesCollection(samples.toPrometheus())
+                        val extraLabels = mapOf(
+                            "server" to api.serverName,
+                            "platform" to api.platform.type.name
+                        )
+                        val collection = MetricSamplesCollection(samples.toPrometheus(extraLabels))
 
                         gateway?.push(collection, driver.config.pushGateway.job, groupingKey)
                     } catch (error: Throwable) {

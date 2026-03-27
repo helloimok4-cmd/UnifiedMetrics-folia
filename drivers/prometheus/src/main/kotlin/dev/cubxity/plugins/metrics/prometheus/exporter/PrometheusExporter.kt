@@ -30,7 +30,9 @@ interface PrometheusExporter : Closeable {
     fun initialize()
 }
 
-fun List<Metric>.toPrometheus(): List<Collector.MetricFamilySamples> {
+fun List<Metric>.toPrometheus(extraLabels: Map<String, String> = emptyMap()): List<Collector.MetricFamilySamples> {
+    val extraKeys = extraLabels.keys.toList()
+    val extraValues = extraLabels.values.toList()
     val map = LinkedHashMap<String, MutableList<Metric>>(size)
 
     fastForEach { metric ->
@@ -57,8 +59,8 @@ fun List<Metric>.toPrometheus(): List<Collector.MetricFamilySamples> {
         }
 
         metrics.fastForEach { metric ->
-            val keys = metric.labels.keys.toList()
-            val values = metric.labels.values.toList()
+            val keys = metric.labels.keys.toList() + extraKeys
+            val values = metric.labels.values.toList() + extraValues
 
             when (metric) {
                 is CounterMetric -> {
