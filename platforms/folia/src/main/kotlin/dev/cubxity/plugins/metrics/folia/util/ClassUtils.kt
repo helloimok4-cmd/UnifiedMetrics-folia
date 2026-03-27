@@ -15,16 +15,18 @@
  *     along with UnifiedMetrics.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package dev.cubxity.plugins.metrics.api.platform
+package dev.cubxity.plugins.metrics.folia.util
 
-sealed class PlatformType(val name: String) {
-    // Server implementations
-    object Bukkit : PlatformType("Bukkit")
-    object Folia : PlatformType("Folia")
-    object Minestom : PlatformType("Minestom")
-    object Fabric : PlatformType("Fabric")
+fun classExists(className: String): Boolean = try {
+    Class.forName(className)
+    true
+} catch (e: ClassNotFoundException) {
+    false
+}
 
-    // Proxies
-    object Velocity : PlatformType("Velocity")
-    object BungeeCord : PlatformType("BungeeCord")
+fun declaredMethodExists(className: String, methodName: String, vararg parameterTypes: Class<*>): Boolean = try {
+    Class.forName(className).getDeclaredMethod(methodName, *parameterTypes)
+    true
+} catch (e: ReflectiveOperationException) {
+    false
 }

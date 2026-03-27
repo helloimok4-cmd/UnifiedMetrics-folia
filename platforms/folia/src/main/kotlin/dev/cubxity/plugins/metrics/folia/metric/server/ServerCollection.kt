@@ -15,16 +15,14 @@
  *     along with UnifiedMetrics.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package dev.cubxity.plugins.metrics.api.platform
+package dev.cubxity.plugins.metrics.folia.metric.server
 
-sealed class PlatformType(val name: String) {
-    // Server implementations
-    object Bukkit : PlatformType("Bukkit")
-    object Folia : PlatformType("Folia")
-    object Minestom : PlatformType("Minestom")
-    object Fabric : PlatformType("Fabric")
+import dev.cubxity.plugins.metrics.api.metric.collector.Collector
+import dev.cubxity.plugins.metrics.api.metric.collector.CollectorCollection
+import dev.cubxity.plugins.metrics.folia.bootstrap.UnifiedMetricsFoliaBootstrap
 
-    // Proxies
-    object Velocity : PlatformType("Velocity")
-    object BungeeCord : PlatformType("BungeeCord")
+class ServerCollection(bootstrap: UnifiedMetricsFoliaBootstrap) : CollectorCollection {
+    override val collectors: List<Collector> = listOf(ServerCollector(bootstrap))
+
+    override val isAsync: Boolean get() = true
 }

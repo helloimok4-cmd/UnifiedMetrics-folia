@@ -15,16 +15,10 @@
  *     along with UnifiedMetrics.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package dev.cubxity.plugins.metrics.api.platform
+package dev.cubxity.plugins.metrics.folia.metric.tick
 
-sealed class PlatformType(val name: String) {
-    // Server implementations
-    object Bukkit : PlatformType("Bukkit")
-    object Folia : PlatformType("Folia")
-    object Minestom : PlatformType("Minestom")
-    object Fabric : PlatformType("Fabric")
+interface TickReporter {
+    fun initialize()
 
-    // Proxies
-    object Velocity : PlatformType("Velocity")
-    object BungeeCord : PlatformType("BungeeCord")
+    fun dispose()
 }

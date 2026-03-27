@@ -25,6 +25,7 @@ Click [here](https://unifiedmetrics-demo.cubxity.dev) for live preview!
 **Server:**
 
 - 1.8+ Spigot servers *(includes Spigot-based forks)*
+- 1.20.1+ Folia servers
 - 1.16+ Fabric servers
 - Minestom
 - Velocity
@@ -52,8 +53,8 @@ Read the [wiki](https://docs.cubxity.dev/docs/unifiedmetrics/intro) for instruct
 | systemThread  | Current, daemon, started, and peak thread count | All              | true    |
 | events        | Login, join, quit, chat, and ping event counter | All              | true    |
 | server        | Plugins count and player counts                 | All              | true    |
-| tick          | Tick duration histogram                         | Bukkit, Minestom | true    |
-| world         | World entities, players, and chunks count       | Bukkit, Minestom | true    |
+| tick          | Tick duration histogram                         | Bukkit, Folia, Minestom | true    |
+| world         | World entities, players, and chunks count       | Bukkit, Folia, Minestom | true    |
 
 </details>
 
@@ -79,7 +80,7 @@ and [YourKit YouMonitor](https://www.yourkit.com/youmonitor/).
 
 **Requirements:**
 
-- JDK 8+ (16+ for Fabric, 17+ for Minestom)
+- JDK 8+ (16+ for Fabric, 17+ for Folia and Minestom)
 - Git (Optional)
 
 To build UnifiedMetrics, you need to obtain the source code first. You can download the source from GitHub or use the
