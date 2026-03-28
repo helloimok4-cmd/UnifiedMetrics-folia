@@ -30,28 +30,29 @@ import java.lang.reflect.Method
 /**
  * Per-region TPS and MSPT collector for Folia / Canvas.
  *
- * TPS source (tiered):
- *   Tier 1 (Folia 1.21.11+) — public API:  `Server.getRegionTPS(world, chunkX, chunkZ)[0]`
- *   Tier 2 (older Folia)    — skipped (method not available at runtime)
+ * TPS source:
+ *   Public API (Folia 1.21.11+): `Server.getRegionTPS(world, chunkX, chunkZ)[0]`
  *
- * MSPT source (reflection into NMS, with graceful fallback if unavailable):
- *   `ServerLevel.regioniser`
- *     → `ThreadedRegionizer.getRegionAtSynchronised(chunkX, chunkZ)`
- *        → `ThreadedRegion.getData()` (TickRegionData)
- *           → `.getRegionSchedulingHandle()` (RegionScheduleHandle)
- *              → `.getTickReport5s(nanoTime)` (TickData.TickReportData)
- *                 → `.timePerTickData().segmentAll().average()` (nanoseconds per tick)
+ * MSPT source (reflection, graceful fallback):
+ *   ServerLevel.regioniser → ThreadedRegionizer.getRegionAtSynchronised
+ *     → ThreadedRegion.getData → getRegionSchedulingHandle
+ *        → getTickReport5s → timePerTickData → segmentAll → average (nanoseconds)
  *
- * Region enumeration:
- *   Iterates `world.loadedChunks`, calls `getRegionAtSynchronised` per chunk, deduplicates
- *   by `ThreadedRegion.id` (a public `long` field).  Center chunk is read from
- *   `ThreadedRegion.getCenterChunk()` (returns `net.minecraft.world.level.ChunkPos`).
- *   All NMS calls are thread-safe (`getRegionAtSynchronised` uses a lock).
+ * Region enumeration — two tiers:
+ *   Fast path (O(regions)): reflect `ThreadedRegionizer.regions` map, iterate values
+ *     under `synchronized(regionizer)`. Available on all known Folia forks.
+ *   Fallback (O(chunks)):  iterate `world.loadedChunks`, deduplicate by region.id.
+ *     Guarded at MAX_CHUNKS_PER_WORLD to prevent excessive overhead on huge worlds.
  *
- * Metrics emitted (with labels `world` and `region` = "centerX,centerZ"):
- *   minecraft_region_tps              — TPS (5-second average)
- *   minecraft_region_mspt_seconds     — MSPT in seconds (5-second average), omitted if unavailable
+ * Update interval: every 100 ticks (5 s) — matches the 5 s averaging window of the
+ * underlying TPS/MSPT data, so updating faster would not add any precision.
+ *
+ * Metrics emitted (labels: `world`, `region` = "centerChunkX,centerChunkZ"):
+ *   minecraft_region_tps              — TPS  (5 s average)
+ *   minecraft_region_mspt_seconds     — MSPT in seconds (5 s average), omitted if unavailable
  */
+private const val MAX_CHUNKS_PER_WORLD = 50_000
+private const val UPDATE_INTERVAL_TICKS = 100L  // 5 seconds
 class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) : CollectorCollection {
 
     // ── Reflection handles (loaded once on first snapshot) ────────────────────
@@ -62,6 +63,8 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
 
     @Volatile private var snapshots: List<RegionSnapshot> = emptyList()
     private var task: ScheduledTask? = null
+    /** Worlds where chunk-fallback was skipped due to exceeding MAX_CHUNKS_PER_WORLD — log once only. */
+    private val oversizedWarned = HashSet<String>()
 
     // ── Data class ────────────────────────────────────────────────────────────
 
@@ -98,7 +101,7 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
     override fun initialize() {
         handles // trigger lazy init → log tier at startup
         task = bootstrap.server.globalRegionScheduler.runAtFixedRate(
-            bootstrap, { updateSnapshots() }, 1L, 20L
+            bootstrap, { updateSnapshots() }, 1L, UPDATE_INTERVAL_TICKS
         )
     }
 
@@ -116,35 +119,64 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
 
         for (world in bootstrap.server.worlds) {
             val nmsWorld = h.getHandle(world) ?: continue
-            val seen = HashSet<Long>()   // deduplicate by region id
 
-            for (chunk in world.loadedChunks) {
+            // Fast path: O(regions) — enumerate directly from threadedRegionizer.regions map
+            val regions = h.getAllRegionsDirect(nmsWorld)
+            if (regions != null) {
+                for (region in regions) {
+                    collectRegion(h, world, region, now, next)
+                }
+                continue
+            }
+
+            // Fallback: O(chunks) — guard oversized worlds to avoid excessive overhead
+            val chunks = world.loadedChunks
+            if (chunks.size > MAX_CHUNKS_PER_WORLD) {
+                if (oversizedWarned.add(world.name)) {
+                    bootstrap.logger.warn(
+                        "[UnifiedMetrics] World '${world.name}' has ${chunks.size} loaded chunks " +
+                        "(> $MAX_CHUNKS_PER_WORLD). Region profiling skipped for this world. " +
+                        "Consider upgrading to a Folia build that exposes ThreadedRegionizer.regions."
+                    )
+                }
+                continue
+            }
+            oversizedWarned.remove(world.name)
+
+            val seen = HashSet<Long>()
+            for (chunk in chunks) {
                 val region = h.getRegionAt(nmsWorld, chunk.x, chunk.z) ?: continue
                 val regionId = h.getRegionId(region)
                 if (!seen.add(regionId)) continue
-
-                // Determine center chunk for the label
-                val (cx, cz) = h.getCenterChunk(region) ?: (chunk.x to chunk.z)
-                val label = "$cx,$cz"
-
-                // TPS: public Folia API (Tier 1: 1.21.11+) ─────────────────────
-                val tps: Double = try {
-                    bootstrap.server.getRegionTPS(world, cx, cz)?.get(0) ?: continue
-                } catch (_: Throwable) { continue }
-
-                // MSPT: reflection chain (Tier 1 only) ──────────────────────────
-                val msptSeconds: Double? = try {
-                    val schedHandle = h.getRegionSchedulingHandle(h.getData(region)) ?: continue
-                    val report     = h.getTickReport5s(schedHandle, now) ?: continue
-                    val nanos      = h.getTimePerTickAvg(report)
-                    nanos / 1_000_000_000.0   // nanoseconds → seconds
-                } catch (_: Throwable) { null }
-
-                next += RegionSnapshot(world.name, label, tps, msptSeconds)
+                collectRegion(h, world, region, now, next)
             }
         }
 
         snapshots = next
+    }
+
+    private fun collectRegion(
+        h: Handles,
+        world: org.bukkit.World,
+        region: Any,
+        now: Long,
+        out: MutableList<RegionSnapshot>
+    ) {
+        val (cx, cz) = h.getCenterChunk(region) ?: return
+        val label = "$cx,$cz"
+
+        val tps: Double = try {
+            bootstrap.server.getRegionTPS(world, cx, cz)?.get(0) ?: return
+        } catch (_: Throwable) { return }
+
+        val msptSeconds: Double? = try {
+            val schedHandle = h.getRegionSchedulingHandle(h.getData(region)) ?: return
+            val report      = h.getTickReport5s(schedHandle, now) ?: return
+            val nanos       = h.getTimePerTickAvg(report)
+            if (nanos.isNaN()) null else nanos / 1_000_000_000.0
+        } catch (_: Throwable) { null }
+
+        out += RegionSnapshot(world.name, label, tps, msptSeconds)
     }
 
     // ── Reflection initialisation ─────────────────────────────────────────────
@@ -172,6 +204,13 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
                 ?: return logFail("getRegionAtSynchronised not found")
 
             val regionClass = getRegionAtMethod.returnType
+
+            // 3b. Optional fast-path: ThreadedRegionizer.regions — the internal map of all regions.
+            //     Iterating this is O(regions) vs O(chunks) for loadedChunks enumeration.
+            //     Access is guarded by synchronized(regionizer) to match Folia's own locking.
+            val regionsMapField: Field? = try {
+                regionizerClass.getDeclaredField("regions").also { it.isAccessible = true }
+            } catch (_: NoSuchFieldException) { null }
 
             // 4. ThreadedRegion.id (long, public) — field name may vary across forks
             val idField: Field = try {
@@ -231,25 +270,27 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
                 ?.firstOrNull { it.name == "average" && it.parameterCount == 0 }
 
             val msptAvailable = averageMethod != null
+            val enumMode = if (regionsMapField != null) "direct-map(O(regions))" else "loadedChunks-fallback(O(chunks))"
             bootstrap.logger.info(
                 "[UnifiedMetrics] Region profiling active — " +
-                "enumeration=getRegionAtSynchronised, TPS=public-API, MSPT=${if (msptAvailable) "reflection-ok" else "unavailable"}"
+                "enumeration=$enumMode, TPS=public-API, MSPT=${if (msptAvailable) "reflection-ok" else "unavailable"}"
             )
 
             Handles(
-                getHandleMethod    = getHandleMethod,
-                regioniserField    = regioniserField,
-                getRegionAt        = getRegionAtMethod,
-                idField            = idField,
-                getCenterChunk     = getCenterChunkMethod,
-                chunkPosX          = chunkPosX,
-                chunkPosZ          = chunkPosZ,
-                getData            = getDataMethod,
+                getHandleMethod     = getHandleMethod,
+                regioniserField     = regioniserField,
+                regionsMapField     = regionsMapField,
+                getRegionAt         = getRegionAtMethod,
+                idField             = idField,
+                getCenterChunk      = getCenterChunkMethod,
+                chunkPosX           = chunkPosX,
+                chunkPosZ           = chunkPosZ,
+                getData             = getDataMethod,
                 getSchedulingHandle = getSchedulingHandleMethod,
-                getTickReport5s    = getTickReport5sMethod,
-                timePerTickData    = timePerTickDataMethod,
-                segmentAll         = segmentAllMethod,
-                average            = averageMethod
+                getTickReport5s     = getTickReport5sMethod,
+                timePerTickData     = timePerTickDataMethod,
+                segmentAll          = segmentAllMethod,
+                average             = averageMethod
             )
         } catch (e: Exception) {
             bootstrap.logger.warn("[UnifiedMetrics] Region profiling unavailable: ${e.message}")
@@ -267,6 +308,7 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
     private inner class Handles(
         private val getHandleMethod: Method,
         private val regioniserField: Field,
+        private val regionsMapField: Field?,
         private val getRegionAt: Method,
         private val idField: Field,
         private val getCenterChunk: Method,
@@ -282,6 +324,22 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
         fun getHandle(world: World): Any? = try {
             getHandleMethod.invoke(world)
         } catch (_: Exception) { null }
+
+        /**
+         * Fast path: returns a snapshot list of all live regions by reading
+         * ThreadedRegionizer.regions directly under the regionizer's own monitor lock.
+         * Returns null if the field was unavailable (fall back to chunk iteration).
+         */
+        fun getAllRegionsDirect(nmsWorld: Any): List<Any>? {
+            if (regionsMapField == null) return null
+            val regionizer = try { regioniserField.get(nmsWorld) } catch (_: Exception) { return null } ?: return null
+            return try {
+                @Suppress("UNCHECKED_CAST")
+                synchronized(regionizer) {
+                    (regionsMapField.get(regionizer) as? Map<*, *>)?.values?.filterNotNull()
+                }
+            } catch (_: Exception) { null }
+        }
 
         fun getRegionAt(nmsWorld: Any, chunkX: Int, chunkZ: Int): Any? = try {
             val regionizer = regioniserField.get(nmsWorld) ?: return null
