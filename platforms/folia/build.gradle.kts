@@ -19,14 +19,14 @@ plugins {
     id("com.github.johnrengelman.shadow")
 }
 
-// Paper API 1.20.1 requires JVM 17; override the root project's JVM 8 default for this module only.
+// Folia API 1.21.11 requires JVM 21.
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
 }
 configure<JavaPluginExtension> {
-    targetCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 repositories {
@@ -35,7 +35,7 @@ repositories {
 
 dependencies {
     api(project(":unifiedmetrics-core"))
-    compileOnly("io.papermc.paper", "paper-api", "1.20.1-R0.1-SNAPSHOT")
+    compileOnly("dev.folia", "folia-api", "1.21.11-R0.1-SNAPSHOT")
 }
 
 tasks {
@@ -47,6 +47,8 @@ tasks {
         relocate("okhttp", "dev.cubxity.plugins.metrics.libs.okhttp")
         relocate("okio", "dev.cubxity.plugins.metrics.libs.okio")
         relocate("io.prometheus", "dev.cubxity.plugins.metrics.libs.io.prometheus")
+        relocate("kotlinx.coroutines", "dev.cubxity.plugins.metrics.libs.kotlinx.coroutines")
+        relocate("kotlinx.serialization", "dev.cubxity.plugins.metrics.libs.kotlinx.serialization")
 
         manifest {
             attributes(mapOf("paperweight-mappings-namespace" to "mojang"))

@@ -1,7 +1,7 @@
 name: UnifiedMetrics
 main: dev.cubxity.plugins.metrics.folia.bootstrap.UnifiedMetricsFoliaBootstrap
 description: "Fully-featured metrics plugin for Minecraft servers (Folia)"
-api-version: 1.20
+api-version: 1.21
 author: Cubxity
 version: ${version}
 load: STARTUP

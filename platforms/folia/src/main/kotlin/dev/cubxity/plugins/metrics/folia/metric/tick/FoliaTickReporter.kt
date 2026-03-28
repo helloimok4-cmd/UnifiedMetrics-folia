@@ -23,11 +23,18 @@ import dev.cubxity.plugins.metrics.folia.bootstrap.UnifiedMetricsFoliaBootstrap
 import org.bukkit.event.EventHandler
 import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
+import java.util.concurrent.atomic.AtomicLong
+
+// Folia fires ServerTickEndEvent once per region (one per world), not once per global tick.
+// We deduplicate by only recording the first event in each 50ms tick window.
+private const val TICK_WINDOW_MS = 50L
 
 class FoliaTickReporter(
     private val metric: TickCollection,
     private val bootstrap: UnifiedMetricsFoliaBootstrap
 ) : TickReporter, Listener {
+    private val lastTickSlot = AtomicLong(-1L)
+
     override fun initialize() {
         bootstrap.server.pluginManager.registerEvents(this, bootstrap)
     }
@@ -38,6 +45,9 @@ class FoliaTickReporter(
 
     @EventHandler
     fun onTick(event: ServerTickEndEvent) {
-        metric.onTick(event.tickDuration / MILLISECONDS_PER_SECOND)
+        val slot = System.currentTimeMillis() / TICK_WINDOW_MS
+        if (lastTickSlot.getAndSet(slot) != slot) {
+            metric.onTick(event.tickDuration / MILLISECONDS_PER_SECOND)
+        }
     }
 }
