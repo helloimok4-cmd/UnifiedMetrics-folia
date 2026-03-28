@@ -32,11 +32,11 @@ class FoliaDispatcher(private val plugin: JavaPlugin) : CoroutineDispatcher(), D
             timeMillis,
             TimeUnit.MILLISECONDS
         )
-        continuation.invokeOnCancellation { task.cancel() }
+        continuation.invokeOnCancellation { task?.cancel() }
     }
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {
-        if (!context.isActive) {
+        if (!context.isActive || !plugin.isEnabled) {
             return
         }
         plugin.server.globalRegionScheduler.execute(plugin, block)

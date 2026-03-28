@@ -74,7 +74,7 @@ class FoliaWorldCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) :
         task = bootstrap.server.globalRegionScheduler.runAtFixedRate(
             bootstrap,
             { updateSnapshots() },
-            1L,
+            0L,
             20L  // update every second (20 ticks)
         )
     }
