@@ -212,15 +212,15 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
                 regionizerClass.getDeclaredField("regions").also { it.isAccessible = true }
             } catch (_: NoSuchFieldException) { null }
 
-            // 4. ThreadedRegion.id (long, public) — field name may vary across forks
-            val idField: Field = try {
+            // 4. ThreadedRegion.id (long) — only needed for chunk-fallback dedup; optional.
+            //    Search public fields first (includes superclasses), then walk declared fields
+            //    up the hierarchy, then try first long field anywhere in hierarchy.
+            val idField: Field? = try {
                 regionClass.getField("id")
             } catch (_: NoSuchFieldException) {
-                // Try declared field by name first, then fall back to first long field
-                (regionClass.declaredFields.firstOrNull { it.name == "id" }
-                    ?: regionClass.declaredFields.firstOrNull { it.type == Long::class.javaPrimitiveType }
-                    ?: return logFail("ThreadedRegion id field not found (tried 'id' + long fallback)"))
-                    .also { it.isAccessible = true }
+                findFieldInHierarchy(regionClass, name = "id")
+                    ?: findFieldInHierarchy(regionClass, type = Long::class.javaPrimitiveType)
+                    // null is OK — chunk-fallback will use hashCode() for deduplication
             }
 
             // 5. ThreadedRegion.getCenterChunk() → ChunkPos
@@ -298,6 +298,19 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
         }
     }
 
+    /** Walk class hierarchy (including superclasses) to find a declared field matching name and/or type. */
+    private fun findFieldInHierarchy(clazz: Class<*>, name: String? = null, type: Class<*>? = null): Field? {
+        var c: Class<*>? = clazz
+        while (c != null && c != Any::class.java) {
+            val found = c.declaredFields.firstOrNull { f ->
+                (name == null || f.name == name) && (type == null || f.type == type)
+            }
+            if (found != null) return found.also { it.isAccessible = true }
+            c = c.superclass
+        }
+        return null
+    }
+
     private fun logFail(msg: String): Handles? {
         bootstrap.logger.warn("[UnifiedMetrics] Region profiling unavailable: $msg")
         return null
@@ -310,7 +323,7 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
         private val regioniserField: Field,
         private val regionsMapField: Field?,
         private val getRegionAt: Method,
-        private val idField: Field,
+        private val idField: Field?,
         private val getCenterChunk: Method,
         private val chunkPosX: Field,
         private val chunkPosZ: Field,
@@ -347,8 +360,8 @@ class FoliaRegionCollector(private val bootstrap: UnifiedMetricsFoliaBootstrap) 
         } catch (_: Exception) { null }
 
         fun getRegionId(region: Any): Long = try {
-            idField.getLong(region)
-        } catch (_: Exception) { region.hashCode().toLong() }
+            idField?.getLong(region) ?: System.identityHashCode(region).toLong()
+        } catch (_: Exception) { System.identityHashCode(region).toLong() }
 
         fun getCenterChunk(region: Any): Pair<Int, Int>? = try {
             val chunkPos = getCenterChunk.invoke(region) ?: return null
