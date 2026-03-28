@@ -24,11 +24,13 @@ import dev.cubxity.plugins.metrics.prometheus.config.PrometheusMode
 import dev.cubxity.plugins.metrics.prometheus.exporter.PrometheusExporter
 import dev.cubxity.plugins.metrics.prometheus.exporter.PrometheusHTTPExporter
 import dev.cubxity.plugins.metrics.prometheus.exporter.PushGatewayExporter
+import dev.cubxity.plugins.metrics.prometheus.exporter.RemoteWriteExporter
 
 class PrometheusMetricsDriver(api: UnifiedMetrics, val config: PrometheusConfig) : MetricsDriver {
     private val exporter: PrometheusExporter =  when (config.mode) {
         PrometheusMode.Http -> PrometheusHTTPExporter(api, this)
         PrometheusMode.PushGateway -> PushGatewayExporter(api, this)
+        PrometheusMode.RemoteWrite -> RemoteWriteExporter(api, this)
     }
 
     override fun initialize() {

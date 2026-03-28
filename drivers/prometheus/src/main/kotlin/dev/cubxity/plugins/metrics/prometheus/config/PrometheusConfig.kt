@@ -24,7 +24,8 @@ import kotlinx.serialization.Serializable
 data class PrometheusConfig(
     val mode: PrometheusMode = PrometheusMode.Http,
     val http: PrometheusHttpConfig = PrometheusHttpConfig(),
-    val pushGateway: PushGatewayConfig = PushGatewayConfig()
+    val pushGateway: PushGatewayConfig = PushGatewayConfig(),
+    val remoteWrite: RemoteWriteConfig = RemoteWriteConfig()
 )
 
 @Serializable
@@ -33,7 +34,10 @@ enum class PrometheusMode {
     Http,
 
     @SerialName("PUSHGATEWAY")
-    PushGateway
+    PushGateway,
+
+    @SerialName("REMOTE_WRITE")
+    RemoteWrite
 }
 
 @Serializable
@@ -65,4 +69,11 @@ data class AuthenticationConfig(
     val scheme: AuthenticationScheme = AuthenticationScheme.None,
     val username: String = "username",
     val password: String = "password"
+)
+
+@Serializable
+data class RemoteWriteConfig(
+    val url: String = "https://prometheus-prod-37-prod-ap-southeast-1.grafana.net/api/prom/push",
+    val authentication: AuthenticationConfig = AuthenticationConfig(),
+    val interval: Long = 15
 )

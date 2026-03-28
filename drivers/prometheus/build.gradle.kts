@@ -21,4 +21,6 @@ dependencies {
     compileOnly(project(":unifiedmetrics-api"))
     api("io.prometheus:simpleclient_httpserver:0.16.0")
     api("io.prometheus:simpleclient_pushgateway:0.16.0")
+    api("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.7.3")
+    api("org.xerial.snappy:snappy-java:1.1.10.7")
 }
