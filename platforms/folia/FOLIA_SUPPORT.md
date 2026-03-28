@@ -110,6 +110,123 @@ Paper/Canvas 1.21.11 bundles its own `kotlinx-coroutines`. Without relocation, a
 
 ---
 
+## Configuration (`config.yml`)
+
+Generated on first startup at `plugins/UnifiedMetrics/config.yml`.
+
+```yaml
+server:
+  name: global          # Server label — appears as "server" label on all metrics.
+                        # Override with env var: UNIFIEDMETRICS_SERVER_NAME
+
+metrics:
+  enabled: true
+  driver: prometheus    # Only "prometheus" is bundled.
+
+  collectors:
+    systemGc: true      # JVM garbage collection (gc_duration, gc_freed)
+    systemMemory: true  # JVM heap/nonheap memory
+    systemProcess: true # CPU usage (process_cpu_load_ratio, process_cpu_seconds_total)
+    systemThread: true  # JVM thread counts
+    server: true        # minecraft_players_count/max, minecraft_plugins
+    world: true         # minecraft_world_entities/players/loaded_chunks per world
+    tick: true          # minecraft_tick_duration_seconds histogram + per-region TPS/MSPT
+    events: true        # login/join/quit/chat/ping event counters
+```
+
+---
+
+## Prometheus Driver Options
+
+The driver config lives in `plugins/UnifiedMetrics/config.yml` under the driver block, which is written to a separate driver config file. The Prometheus driver supports **three modes**:
+
+### Mode: `HTTP` (default — pull)
+
+Exposes a `/metrics` endpoint that Prometheus scrapes.
+
+```yaml
+mode: HTTP
+http:
+  host: 0.0.0.0
+  port: 9100
+  authentication:
+    scheme: NONE        # or BASIC
+    username: username
+    password: password
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `host` | `0.0.0.0` | Bind address |
+| `port` | `9100` | HTTP port for `/metrics` |
+| `authentication.scheme` | `NONE` | `NONE` or `BASIC` |
+
+Add to your `prometheus.yml`:
+```yaml
+scrape_configs:
+  - job_name: minecraft
+    static_configs:
+      - targets: ['your-server-ip:9100']
+```
+
+---
+
+### Mode: `PUSHGATEWAY` (push)
+
+Pushes metrics to a Prometheus Pushgateway on a fixed interval.
+
+```yaml
+mode: PUSHGATEWAY
+pushGateway:
+  job: unifiedmetrics
+  url: http://pushgateway:9091
+  interval: 10          # seconds between pushes
+  authentication:
+    scheme: NONE        # or BASIC
+    username: username
+    password: password
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `job` | `unifiedmetrics` | Pushgateway job label |
+| `url` | `http://pushgateway:9091` | Pushgateway endpoint |
+| `interval` | `10` | Push interval in seconds |
+| `authentication.scheme` | `NONE` | `NONE` or `BASIC` |
+
+---
+
+### Mode: `REMOTE_WRITE` (push — Grafana Cloud / Mimir)
+
+Pushes metrics directly to a Prometheus-compatible remote_write endpoint (e.g. Grafana Cloud, Grafana Mimir, Thanos Receiver).
+
+```yaml
+mode: REMOTE_WRITE
+remoteWrite:
+  url: https://prometheus-prod-XX-prod-XX.grafana.net/api/prom/push
+  interval: 15          # seconds between pushes
+  authentication:
+    scheme: BASIC
+    username: <grafana-cloud-instance-id>
+    password: <grafana-cloud-api-key>
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `url` | Grafana Cloud AP-Southeast-1 URL | Remote write endpoint |
+| `interval` | `15` | Push interval in seconds |
+| `authentication.scheme` | `NONE` | `NONE` or `BASIC` |
+
+**Grafana Cloud setup:**
+1. Go to your Grafana Cloud stack → **Prometheus** → **Details**
+2. Copy the **Remote Write Endpoint** → set as `url`
+3. Copy the **Username / Instance ID** → set as `username`
+4. Create an API key with **MetricsPublisher** role → set as `password`
+
+> The payload is Snappy-compressed Protobuf (`application/x-protobuf`, `X-Prometheus-Remote-Write-Version: 0.1.0`), compatible with all standard remote_write receivers.
+
+---
+
 ## Grafana Dashboards
 
 Two dashboards are provided in `grafana/`:
